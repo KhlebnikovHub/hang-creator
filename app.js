@@ -3,7 +3,7 @@
   const C = window.HangCore;
   const $ = id => document.getElementById(id);
   const KEY = 'quiet-rhythm-library-v1';
-  const state = { tabs: [], current: null, mode: 'browser', pending: new Set(), deleted: new Set(), undo: [], redo: [], selected: { measure: 0, row: 'main', slot: 0 }, rhythmScope: 'measure', playing: false, preview: false, autoAdvance: true };
+  const state = { tabs: [], current: null, mode: 'browser', pending: new Set(), deleted: new Set(), undo: [], redo: [], selected: { measure: 0, row: 'main', slot: 0 }, rhythmScope: 'measure', playing: false, preview: false, autoAdvance: true, entryMode: 'select', brush: 'D' };
   let saveTimer, toastTimer, savePromise, storageOK = true, historyTime = 0, historyKey = '', player;
   const files = window.HangFiles.create({ download });
   const directory = window.HangDirectory.create();
@@ -11,7 +11,7 @@
   let savingTabId = null, fileSaveError = null, serverSaveError = false, openingFile = false, folderLoading = false;
   const esc = value => String(value).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const current = () => state.tabs.find(tab => tab.id === state.current);
-  const rowsFor = tab => tab.hands === 'split' ? ['R', 'L'] : ['main'];
+  const rowsFor = (tab, measure = state.selected.measure, slot = state.selected.slot) => C.cellRows(tab, measure, slot);
   const notationNames = { count: 'Счёт', konnakol: 'Коннакол', hybrid: 'Гибрид' };
   const formatMeter = tab => `${tab.meter.numerator}/${tab.meter.denominator}`;
   function fileStatus(tab = current()) {
@@ -103,7 +103,7 @@
     const next = C.clone(before); const result = mutator(next) || next;
     if (JSON.stringify(before) === JSON.stringify(result)) return;
     const now = Date.now();
-    if (!options.key || options.key !== historyKey || now - historyTime > 700) state.undo.push(C.clone(before));
+    if (!options.key || options.key !== historyKey || (!options.stroke && now - historyTime > 700)) state.undo.push(C.clone(before));
     if (state.undo.length > 100) state.undo.shift();
     historyTime = now; historyKey = options.key || ''; state.redo = [];
     state.tabs[state.tabs.findIndex(tab => tab.id === before.id)] = result;
@@ -146,11 +146,12 @@
       const choices = [...new Set([...options, beat.division])].sort((a, b) => a - b);
       const phraseActive = tab.notation === 'konnakol' && tab.phrases.length > 0;
       const different = !local && tab.measures.some((measure, index) => C.measureBeats(tab, index)[i]?.division !== beat.division);
+      const manual = Boolean(beat.subdivisions || beat.weights);
       const usesSyllables = tab.notation === 'konnakol' || (tab.notation === 'hybrid' && beat.division > 1);
       const mixedHybrid = tab.notation === 'hybrid' && different;
       const value = usesSyllables ? (phraseActive ? shown.join(' ') : beat.syllables.length ? beat.syllables.join(' ') : shown.join(' ')) : beat.label;
       const title = mixedHybrid ? 'Для подписи выберите конкретный такт или одинаковое деление этой доли во всех тактах.' : phraseActive ? 'Слоги задаёт фраза. Чтобы редактировать доли, выберите «По долям» и нажмите «Применить».' : usesSyllables ? 'Свои слоги: по одному на часть, через пробел.' : 'Первая подпись доли. Остальные части подписываются автоматически.';
-      return `<div class="beat-control"><div class="beat-control-head"><span title="${beat.units}/${tab.meter.denominator}">${i + 1}</span><select data-beat="${i}" aria-label="Части доли ${i + 1}">${different ? '<option value="" selected disabled>Разные</option>' : ''}${choices.map(n => `<option value="${n}" ${!different && n === beat.division ? 'selected' : ''}>${n} ${n === 1 ? 'часть' : n < 5 ? 'части' : 'частей'}</option>`).join('')}</select></div><input class="beat-label" data-label-beat="${i}" ${phraseActive || mixedHybrid ? 'disabled' : ''} aria-label="${usesSyllables ? 'Слоги' : 'Номер'} доли ${i + 1}" title="${esc(title)}" value="${esc(mixedHybrid ? '' : value)}" maxlength="${usesSyllables ? 500 : 32}" placeholder="${esc(mixedHybrid ? 'Разные деления' : shown.join(' '))}"></div>`;
+      return `<div class="beat-control"><div class="beat-control-head"><span title="${beat.units}/${tab.meter.denominator}">${i + 1}</span><select data-beat="${i}" aria-label="Части доли ${i + 1}">${different ? '<option value="" selected disabled>Разные</option>' : manual ? `<option value="" selected disabled>${beat.division} · вручную</option>` : ''}${choices.filter(n => n <= 16).map(n => `<option value="${n}" ${!different && !manual && n === beat.division ? 'selected' : ''}>${n} ${n === 1 ? 'часть' : n < 5 ? 'части' : 'частей'}</option>`).join('')}</select></div><input class="beat-label" data-label-beat="${i}" ${phraseActive || mixedHybrid ? 'disabled' : ''} aria-label="${usesSyllables ? 'Слоги' : 'Номер'} доли ${i + 1}" title="${esc(title)}" value="${esc(mixedHybrid ? '' : value)}" maxlength="${usesSyllables ? 2112 : 32}" placeholder="${esc(mixedHybrid ? 'Разные деления' : shown.join(' '))}"></div>`;
     }).join('');
     $('rhythm-summary').textContent = `${local ? 'Такт ' + (selected + 1) : 'Все такты'} · ${formatMeter(tab)} · ${!local && mixed ? 'деления различаются между тактами' : slots.length + ' позиций'}.`;
     $('konnakol-panel').hidden = tab.notation !== 'konnakol';
@@ -164,28 +165,41 @@
     return !cell.length ? '—' : cell.length === 1 ? esc(cell[0]) : `<span class="chord">${cell.map(part => `<span>${esc(part)}</span>`).join('')}</span>`;
   }
   function countHeader(tab, measureIndex, slots, withHands) {
-    if (tab.notation !== 'hybrid') return `${withHands ? '<div class="hand-label count-hand">Счёт</div>' : ''}${slots.map(slot => `<div class="count-cell ${slot.sub === 0 ? 'beat-start' : ''} ${slot.groupStart ? 'group-start' : ''}" data-count-slot="${slot.index}">${esc(slot.displayLabel)}</div>`).join('')}`;
+    if (tab.notation !== 'hybrid') return slots.map(slot => `<button class="count-cell ${slot.sub === 0 ? 'beat-start' : ''} ${slot.groupStart ? 'group-start' : ''}" data-count-slot="${slot.index}" title="Выбрать позицию ${slot.index + 1}; двойной клик — изменить слог">${esc(slot.displayLabel)}</button>`).join('');
     let index = 0;
     const hand = withHands ? '<div class="hand-label count-hand hybrid-count-hand" style="grid-column:1;grid-row:1 / span 2">Счёт</div>' : '';
     return hand + C.measureBeats(tab, measureIndex).map((beat, beatIndex) => {
       const start = index; index += beat.division;
       const column = start + (withHands ? 2 : 1);
-      if (beat.division === 1) return `<div class="count-cell hybrid-whole beat-start group-start" data-beat-number="${beatIndex}" data-count-slot="${start}" style="grid-column:${column};grid-row:1 / span 2">${esc(beat.label)}</div>`;
-      return `<div class="hybrid-beat" data-beat-number="${beatIndex}" style="grid-column:${column} / span ${beat.division};grid-row:1" aria-label="Доля ${esc(beat.label)}">${esc(beat.label)}</div>` + slots.slice(start, index).map((slot, sub) => `<div class="count-cell hybrid-syllable ${sub === 0 ? 'beat-start group-start' : ''}" data-count-slot="${slot.index}" style="grid-column:${column + sub};grid-row:2">${esc(slot.displayLabel)}</div>`).join('');
+      if (beat.division === 1 && slots[start].displayLabel === slots[start].label) return `<button class="count-cell hybrid-whole beat-start group-start" data-beat-number="${beatIndex}" data-count-slot="${start}" style="grid-column:${column};grid-row:1 / span 2">${esc(slots[start].displayLabel)}</button>`;
+      return `<div class="hybrid-beat" data-beat-number="${beatIndex}" style="grid-column:${column} / span ${beat.division};grid-row:1" aria-label="Доля ${esc(beat.label)}">${esc(beat.label)}</div>` + slots.slice(start, index).map((slot, sub) => `<button class="count-cell hybrid-syllable ${sub === 0 ? 'beat-start group-start' : ''}" data-count-slot="${slot.index}" style="grid-column:${column + sub};grid-row:2" title="Выбрать позицию; двойной клик — изменить слог">${esc(slot.displayLabel)}</button>`).join('');
     }).join('');
   }
   function renderScore(tab) {
-    const rows = rowsFor(tab); const withHands = rows.length === 2;
     state.selected.measure = Math.min(state.selected.measure, tab.measures.length - 1);
     state.selected.slot = Math.min(state.selected.slot, C.slots(tab, state.selected.measure).length - 1);
+    const rows = rowsFor(tab);
     if (!rows.includes(state.selected.row)) state.selected.row = rows[0];
     $('measure-count').textContent = `${tab.measures.length} такт.`;
+    $('score').classList.toggle('monochrome-hands', tab.handColors === false);
+    $('score').classList.toggle('paint-mode', state.entryMode === 'paint');
     $('score').innerHTML = tab.measures.map((measure, m) => {
       const slots = C.slots(tab, m);
-      const columns = (withHands ? '35px ' : '') + slots.map(slot => `${Number(slot.duration.toFixed(8))}fr`).join(' ');
+      const columns = slots.map(slot => `minmax(44px, ${Number(slot.duration.toFixed(12))}fr)`).join(' ');
       const minDuration = Math.min(...slots.map(slot => slot.duration));
-      const minWidth = Math.ceil(slots.reduce((sum, slot) => sum + slot.duration / minDuration * 34, 0)) + (withHands ? 35 : 0);
-      return `<article class="measure-card ${state.rhythmScope === 'measure' && state.selected.measure === m ? 'current-measure' : ''}" data-measure="${m}"><div class="measure-header"><span class="measure-number">${String(m + 1).padStart(2, '0')}</span><input class="measure-label" data-measure-label="${m}" value="${esc(measure.label)}" aria-label="Название такта ${m + 1}" placeholder="Добавить пометку…" maxlength="200"><button class="measure-rhythm-button ${measure.beats ? 'custom-rhythm' : ''}" data-edit-rhythm="${m}" title="Настроить деление долей только в этом такте">Ритм такта</button><div class="measure-actions"><button data-duplicate="${m}" title="Дублировать такт" aria-label="Дублировать такт ${m + 1}">⧉</button><button data-remove="${m}" title="Удалить такт" aria-label="Удалить такт ${m + 1}">×</button>${measureMenu(m, tab.measures.length)}</div></div><div class="grid-scroll"><div class="measure-grid ${tab.notation === 'hybrid' ? 'hybrid-grid' : ''}" style="--columns:${columns};--grid-min:${minWidth}px">${countHeader(tab, m, slots, withHands)}${rows.map((row, r) => `${withHands ? `<div class="hand-label" ${tab.notation === 'hybrid' ? `style="grid-column:1;grid-row:${r + 3}"` : ''}>${row}</div>` : ''}${measure.rows[row].map((cell, s) => `<button class="note-cell ${!cell.length ? 'rest' : ''} ${slots[s].groupStart ? 'group-start' : ''} ${state.selected.measure === m && state.selected.row === row && state.selected.slot === s ? 'selected' : ''}" ${tab.notation === 'hybrid' ? `style="grid-column:${s + (withHands ? 2 : 1)};grid-row:${r + 3}"` : ''} data-cell="${m},${row},${s}" tabindex="${state.selected.measure === m && state.selected.row === row && state.selected.slot === s ? 0 : -1}" aria-label="Такт ${m + 1}, ${row === 'main' ? '' : row + ', '}позиция ${s + 1}: ${esc(C.tokenText(cell))}">${chordMarkup(cell)}</button>`).join('')}`).join('')}</div></div></article>`;
+      const proportionalWidth = Math.ceil(slots.reduce((sum, slot) => sum + slot.duration / minDuration * 44, 0));
+      const minWidth = Math.min(16000, proportionalWidth);
+      const scaleHint = proportionalWidth > 16000 ? '<p class="small-note">Мелкие части увеличены для удобства ввода. Точная длительность показана при выборе ячейки.</p>' : '';
+      const cells = slots.map((slot, s) => {
+        const rows = rowsFor(tab, m, s), withHands = rows.length === 2;
+        const selected = state.selected.measure === m && state.selected.slot === s;
+        const row = rows.includes(state.selected.row) ? state.selected.row : rows[0];
+        const empty = rows.every(hand => !measure.rows[hand][s].length);
+        const content = withHands ? rows.map(hand => `<span class="hand-notes hand-${hand} ${selected && row === hand ? 'active-hand' : ''}" data-hand="${hand}"><small>${hand}</small>${chordMarkup(measure.rows[hand][s])}</span>`).join('') : chordMarkup(measure.rows.main[s]);
+        const description = rows.map(hand => `${hand === 'main' ? '' : hand + ': '}${C.tokenText(measure.rows[hand][s])}`).join('; ');
+        return `<button class="note-cell ${withHands ? 'combined-cell' : ''} ${empty ? 'rest' : ''} ${slot.groupStart ? 'group-start' : ''} ${selected ? 'selected' : ''}" style="grid-column:${s + 1};grid-row:${tab.notation === 'hybrid' ? 3 : 2}" data-cell="${m},${row},${s}" tabindex="${selected ? 0 : -1}" aria-label="Такт ${m + 1}, позиция ${s + 1}: ${esc(description)}">${content}</button>`;
+      }).join('');
+      return `<article class="measure-card ${state.rhythmScope === 'measure' && state.selected.measure === m ? 'current-measure' : ''}" data-measure="${m}"><div class="measure-header"><span class="measure-number">${String(m + 1).padStart(2, '0')}</span><input class="measure-label" data-measure-label="${m}" value="${esc(measure.label)}" aria-label="Название такта ${m + 1}" placeholder="Добавить пометку…" maxlength="200"><button class="measure-rhythm-button ${measure.beats ? 'custom-rhythm' : ''}" data-edit-rhythm="${m}" title="Настроить доли этого такта">Ритм такта</button><div class="measure-actions"><button data-duplicate="${m}" title="Дублировать такт" aria-label="Дублировать такт ${m + 1}">⧉</button><button data-remove="${m}" title="Удалить такт" aria-label="Удалить такт ${m + 1}">×</button>${measureMenu(m, tab.measures.length)}</div></div><div class="grid-scroll"><div class="measure-grid ${tab.notation === 'hybrid' ? 'hybrid-grid' : ''}" style="--columns:${columns};--grid-min:${minWidth}px">${countHeader(tab, m, slots, false)}${cells}</div></div>${scaleHint}</article>`;
     }).join('');
     if (tab.phraseExample) {
       $('score').insertAdjacentHTML('beforeend', `<article class="measure-card phrase-example"><div class="measure-header"><span class="measure-number">Фразировка из оригинала · отдельный пример</span></div><div class="grid-scroll"><div class="measure-grid" style="--columns:repeat(${tab.phraseExample.labels.length},1fr);--grid-min:${tab.phraseExample.labels.length * 34}px">${tab.phraseExample.labels.map(label => `<div class="count-cell">${esc(label)}</div>`).join('')}${tab.phraseExample.notes.map(cell => `<div class="note-cell ${cell.length ? '' : 'rest'}">${chordMarkup(cell)}</div>`).join('')}</div></div></article>`);
@@ -213,7 +227,20 @@
     const position = C.slots(tab, measure)[slot]; if (!position) return;
     const beat = C.measureBeats(tab, measure)[position.beat], cell = tab.measures[measure].rows[row][slot];
     $('selection-context').textContent = `Такт ${measure + 1} · доля ${beat.label}${beat.division > 1 ? ' · ' + position.displayLabel : ''}${row === 'main' ? '' : ' · ' + row} · ${cell.length ? C.tokenText(cell) : 'пауза'}`;
-    document.querySelectorAll('[data-note]').forEach(button => { const active = button.dataset.note === '—' ? !cell.length : cell.includes(button.dataset.note); button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
+    $('cell-duration').textContent = `Ячейка ${position.durationFraction}`;
+    $('merge-cell').disabled = !C.canMergeSlot(tab, measure, slot);
+    const withHands = C.cellHands(tab, measure, slot) === 'split';
+    // Keep the drawing surface still while a stroke crosses ordinary and R/L cells.
+    $('hand-tools').hidden = !withHands && state.entryMode !== 'paint';
+    $('toggle-cell-hands').textContent = withHands ? 'Без рук здесь' : 'Добавить R/L';
+    $('toggle-cell-hands').setAttribute('aria-pressed', String(withHands));
+    $('toggle-cell-hands').title = withHands ? 'Объединить R и L в обычный аккорд только в этой ячейке' : 'Добавить R/L только здесь. Текущий удар станет правой рукой; остальные ячейки сохранятся.';
+    $('hand-colors').checked = tab.handColors !== false;
+    $('hand-colors').disabled = !withHands;
+    document.querySelectorAll('[data-entry-hand]').forEach(button => { const active = button.dataset.entryHand === row; button.disabled = !withHands; button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
+    document.querySelectorAll('[data-note]').forEach(button => { const active = state.entryMode === 'paint' ? button.dataset.note === state.brush : button.dataset.note === '—' ? !cell.length : cell.includes(button.dataset.note); button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active)); });
+    $('board-hint').textContent = state.entryMode === 'paint' ? `Маркер: ${state.brush}${row === 'main' ? '' : ' · ' + row}. Нажимайте или ведите по ячейкам. Прокрутка — вне сетки.` : 'Выберите ячейку и нажмите удар. Счёт над ней тоже можно нажать.';
+    $('auto-advance').disabled = state.entryMode === 'paint';
     document.querySelectorAll('[data-count-slot], [data-beat-number]').forEach(label => {
       const card = label.closest('[data-measure]');
       label.classList.toggle('selected-count', Number(card?.dataset.measure) === measure && (label.hasAttribute('data-count-slot') ? Number(label.dataset.countSlot) === slot : Number(label.dataset.beatNumber) === position.beat));
@@ -222,8 +249,17 @@
   }
   function selectCell(selection, focus = false) {
     const previousMeasure = state.selected.measure;
-    state.selected = selection;
-    document.querySelectorAll('[data-cell]').forEach(cell => { const selected = cell.dataset.cell === `${selection.measure},${selection.row},${selection.slot}`; cell.classList.toggle('selected', selected); cell.tabIndex = selected ? 0 : -1; if (selected && focus) cell.focus({ preventScroll: false }); });
+    const rows = rowsFor(current(), selection.measure, selection.slot);
+    state.selected = selection = { ...selection, row: rows.includes(selection.row) ? selection.row : rows[0] };
+    document.querySelectorAll('[data-cell]').forEach(cell => {
+      const [m, , s] = cell.dataset.cell.split(',');
+      const cellRows = rowsFor(current(), Number(m), Number(s));
+      cell.dataset.cell = `${m},${cellRows.includes(selection.row) ? selection.row : cellRows[0]},${s}`;
+      const selected = Number(m) === selection.measure && Number(s) === selection.slot;
+      cell.classList.toggle('selected', selected); cell.tabIndex = selected ? 0 : -1;
+      cell.querySelectorAll('[data-hand]').forEach(hand => hand.classList.toggle('active-hand', selected && hand.dataset.hand === selection.row));
+      if (selected && focus) cell.focus({ preventScroll: false });
+    });
     document.querySelectorAll('[data-measure]').forEach(card => card.classList.toggle('current-measure', state.rhythmScope === 'measure' && Number(card.dataset.measure) === selection.measure));
     if (previousMeasure !== selection.measure) renderBeats(current());
     updateSelectionContext();
@@ -241,7 +277,8 @@
       const offset = C.slots(tab, state.selected.measure)[state.selected.slot].offset;
       const slots = C.slots(tab, targetMeasure);
       const targetSlot = slots.reduce((best, candidate, i) => Math.abs(candidate.offset - offset) < Math.abs(slots[best].offset - offset) ? i : best, 0);
-      selectCell({ measure: targetMeasure, row: rows[rowIndex < 0 ? rows.length - 1 : 0], slot: targetSlot }, true); return;
+      const targetRows = rowsFor(tab, targetMeasure, targetSlot);
+      selectCell({ measure: targetMeasure, row: targetRows[rowIndex < 0 ? targetRows.length - 1 : 0], slot: targetSlot }, true); return;
     }
     const row = rows[rowIndex];
     selectCell({ measure, row, slot: index }, true);
@@ -273,6 +310,30 @@
     $('cell-value').value = C.tokenText(current().measures[measure].rows[row][slot]).replace(/^-$/, '');
     $('cell-dialog').showModal(); $('cell-value').focus(); $('cell-value').select();
   }
+  async function reshapeCell(parts) {
+    if (state.preview) return;
+    try {
+      const before = JSON.stringify(current()), { measure, slot } = state.selected;
+      const result = parts ? C.splitSlot(current(), measure, slot, parts) : C.mergeSlot(current(), measure, slot);
+      await applyRhythmChange(result, before);
+    } catch (error) { toast(error.message, true); }
+  }
+  function editSyllable() {
+    if (state.preview) return;
+    const { measure, slot } = state.selected, position = C.slots(current(), measure)[slot];
+    $('syllable-location').textContent = `Такт ${measure + 1} · позиция ${slot + 1} · ${position.durationFraction}`;
+    $('syllable-value').value = current().measures[measure].syllables?.[slot] || '';
+    $('syllable-value').placeholder = position.syllable;
+    $('syllable-dialog').showModal(); $('syllable-value').focus();
+  }
+  function patternFields(pattern) {
+    $('pattern-fields').innerHTML = pattern.map((syllable, i) => `<label>${i + 1}<input data-pattern="${i}" value="${esc(syllable)}" maxlength="32" required aria-label="Слог шаблона ${i + 1}"></label>`).join('');
+    patternPreview();
+  }
+  function patternPreview() {
+    const values = [...document.querySelectorAll('[data-pattern]')].map(input => input.value.trim() || '…');
+    $('pattern-preview').textContent = values.slice(0, 4).join(' ') + ' · ' + values.slice(4).join(' ');
+  }
   function confirmAction(title, message, yesText = 'Продолжить') {
     return new Promise(resolve => {
       const dialog = $('confirm-dialog'); $('confirm-title').textContent = title; $('confirm-text').textContent = message; $('confirm-yes').textContent = yesText;
@@ -286,7 +347,8 @@
     const offset = C.slots(current(), state.selected.measure)[state.selected.slot]?.offset;
     const nextSlots = C.slots(changed.tab, state.selected.measure);
     const index = nextSlots.findIndex(slot => Math.abs(slot.offset - offset) < 1e-9);
-    if (index >= 0) state.selected.slot = index;
+    if (Number.isInteger(changed.slot)) state.selected.slot = changed.slot;
+    else if (index >= 0) state.selected.slot = index;
     commit(() => changed.tab);
   }
   async function changeRhythm(meter, beats) {
@@ -460,7 +522,7 @@
     const tab = current(), { measure, slot } = position;
     const card = document.querySelector(`[data-measure="${measure}"]`);
     card?.classList.add('playing-measure');
-    rowsFor(tab).forEach(row => document.querySelector(`[data-cell="${measure},${row},${slot}"]`)?.classList.add('playhead'));
+    rowsFor(tab, measure, slot).forEach(row => document.querySelector(`[data-cell="${measure},${row},${slot}"]`)?.classList.add('playhead'));
     const count = C.slots(tab, measure)[slot];
     $('playback-status').textContent = `Играет · такт ${measure + 1} · доля ${C.measureBeats(tab, measure)[count.beat].label}`;
     const cell = card?.querySelector('.playhead');
@@ -501,11 +563,44 @@
     };
     $('notation-control').onclick = event => { const button = event.target.closest('[data-notation]'); if (button) commit(tab => { tab.notation = button.dataset.notation; }); };
     $('hands').onchange = () => { try { commit(tab => C.setHands(tab, $('hands').value)); } catch (error) { toast(error.message, true); render(); } };
+    $('hand-colors').onchange = () => { const enabled = $('hand-colors').checked; commit(tab => { tab.handColors = enabled; }); };
+    $('entry-hand').onclick = event => { const button = event.target.closest('[data-entry-hand]'); if (button) selectCell({ ...state.selected, row: button.dataset.entryHand }); };
+    $('toggle-cell-hands').onclick = () => {
+      if (state.preview) return;
+      try {
+        const { measure, slot } = state.selected;
+        const mode = C.cellHands(current(), measure, slot) === 'split' ? 'single' : 'split';
+        commit(tab => C.setCellHands(tab, measure, slot, mode));
+        if (mode === 'split') toast('R/L добавлены только здесь. Прежний удар перенесён в R.');
+      } catch (error) { toast(error.message, true); }
+    };
+    $('entry-mode').onclick = event => {
+      const button = event.target.closest('[data-entry-mode]'); if (!button) return;
+      state.entryMode = button.dataset.entryMode;
+      document.querySelectorAll('[data-entry-mode]').forEach(item => { const active = item === button; item.classList.toggle('active', active); item.setAttribute('aria-pressed', String(active)); });
+      $('score').classList.toggle('paint-mode', state.entryMode === 'paint'); updateSelectionContext();
+    };
+    $('split-cell-2').onclick = () => reshapeCell(2);
+    $('split-cell-3').onclick = () => reshapeCell(3);
+    $('merge-cell').onclick = () => reshapeCell(0);
+    $('clear-cell').onclick = () => { if (state.entryMode === 'paint') { state.brush = '—'; updateSelectionContext(); } else setCell('', false); };
+    $('edit-syllable').onclick = editSyllable;
+    $('syllable-form').onsubmit = event => {
+      if (event.submitter?.value === 'cancel') return; event.preventDefault();
+      try { const { measure, slot } = state.selected; const value = $('syllable-value').value.trim(); commit(tab => C.setSlotSyllable(tab, measure, slot, value)); $('syllable-dialog').close(); if (current().notation === 'count') toast('Слог сохранён. Выберите «Коннакол» или «Гибрид», чтобы увидеть его.'); } catch (error) { toast(error.message, true); }
+    };
+    $('edit-pattern').onclick = () => { patternFields(C.getKonnakolPattern(current())); $('pattern-dialog').showModal(); };
+    $('pattern-fields').oninput = patternPreview;
+    $('reset-pattern').onclick = () => patternFields(['Ta','Ka','Di','Mi','Ta','Ka','Jo','Nu']);
+    $('pattern-form').onsubmit = event => {
+      if (event.submitter?.value === 'cancel') return; event.preventDefault();
+      try { const values = [...document.querySelectorAll('[data-pattern]')].map(input => input.value.trim()); commit(tab => C.setKonnakolPattern(tab, values)); $('pattern-dialog').close(); } catch (error) { toast(error.message, true); }
+    };
     $('rhythm-scope').onchange = () => { state.rhythmScope = $('rhythm-scope').value; renderBeats(current()); selectCell(state.selected); };
     $('rhythm-measure').onchange = () => chooseRhythmMeasure(Number($('rhythm-measure').value));
-    $('all-division').onchange = () => { const value = Number($('all-division').value); if (!value) return; $('all-division').value = ''; changeBeats(beats => { beats.forEach(beat => { beat.division = value; beat.syllables = []; }); }); };
+    $('all-division').onchange = () => { const value = Number($('all-division').value); if (!value) return; $('all-division').value = ''; changeBeats(beats => { beats.forEach(beat => { C.resetBeatDivision(beat, value); }); }); };
     $('beat-controls').onchange = event => {
-      if (event.target.matches('[data-beat]')) { const index = Number(event.target.dataset.beat), value = Number(event.target.value); if (value) changeBeats(beats => { beats[index].division = value; beats[index].syllables = []; }); }
+      if (event.target.matches('[data-beat]')) { const index = Number(event.target.dataset.beat), value = Number(event.target.value); if (value) changeBeats(beats => { C.resetBeatDivision(beats[index], value); }); }
       if (event.target.matches('[data-label-beat]')) {
         const i = Number(event.target.dataset.labelBeat), value = event.target.value.trim();
         const displayedBeat = (state.rhythmScope === 'measure' ? C.measureBeats(current(), state.selected.measure) : current().beats)[i];
@@ -523,6 +618,28 @@
       const phrases = text ? text.split('|').map(part => { const syllables = part.trim().split(/\s+/).filter(Boolean); return { size: syllables.length, syllables }; }) : [];
       try { const tab = C.clone(current()); tab.phrases = phrases; C.validateTab(tab); commit(() => tab); } catch (error) { toast(error.message, true); }
     };
+    let paintStroke = null, suppressPaintClick = false;
+    function paintAt(cell) {
+      if (!cell || !paintStroke) return;
+      const [m, , s] = cell.dataset.cell.split(',');
+      const rows = rowsFor(current(), Number(m), Number(s));
+      const row = rows.includes(paintStroke.row) ? paintStroke.row : rows[0];
+      const key = `${m},${row},${s}`; if (paintStroke.visited.has(key)) return;
+      paintStroke.visited.add(key);
+      selectCell({ measure: Number(m), row, slot: Number(s) });
+      commit(tab => { tab.measures[Number(m)].rows[row][Number(s)] = C.parseToken(state.brush); }, { key: paintStroke.id, stroke: true, render: false });
+      renderScore(current());
+    }
+    $('score').onpointerdown = event => {
+      if (state.preview || state.entryMode !== 'paint' || event.button !== 0) return;
+      const cell = event.target.closest('[data-cell]'); if (!cell) return;
+      event.preventDefault(); suppressPaintClick = true;
+      paintStroke = { id: 'stroke-' + C.uid(), visited: new Set(), row: state.selected.row };
+      $('score').setPointerCapture(event.pointerId); paintAt(cell);
+    };
+    $('score').onpointermove = event => { if (paintStroke) paintAt(document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-cell]')); };
+    function endPaint(event) { paintStroke = null; if ($('score').hasPointerCapture(event.pointerId)) $('score').releasePointerCapture(event.pointerId); }
+    $('score').onpointerup = endPaint; $('score').onpointercancel = endPaint;
     $('score').onclick = async event => {
       if (state.preview) return;
       const menu = event.target.closest('.measure-menu');
@@ -549,18 +666,26 @@
         return;
       }
       const rhythmButton = event.target.closest('[data-edit-rhythm]');
-      if (rhythmButton) { chooseRhythmMeasure(Number(rhythmButton.dataset.editRhythm)); document.querySelector('.rhythm-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      if (rhythmButton) { chooseRhythmMeasure(Number(rhythmButton.dataset.editRhythm)); $('advanced-rhythm').open = true; document.querySelector('.rhythm-panel').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      const count = event.target.closest('[data-count-slot]');
+      if (count) selectCell({ measure: Number(count.closest('[data-measure]').dataset.measure), row: state.selected.row, slot: Number(count.dataset.countSlot) });
       const cell = event.target.closest('[data-cell]');
-      if (cell && !state.preview) { const [m, row, s] = cell.dataset.cell.split(','); selectCell({ measure: Number(m), row, slot: Number(s) }); }
+      if (cell && !state.preview) {
+        if (state.entryMode === 'paint' && event.detail > 0 && suppressPaintClick) { suppressPaintClick = false; return; }
+        const [m, row, s] = cell.dataset.cell.split(',');
+        const hand = state.entryMode === 'paint' ? state.selected.row : event.target.closest('[data-hand]')?.dataset.hand || row;
+        selectCell({ measure: Number(m), row: hand, slot: Number(s) });
+        if (state.entryMode === 'paint') setCell(state.brush, false);
+      }
       const duplicate = event.target.closest('[data-duplicate]');
       if (duplicate) { if (current().measures.length >= 512) { toast('Максимум 512 тактов.', true); return; } const index = Number(duplicate.dataset.duplicate); commit(tab => { const measure = C.clone(tab.measures[index]); measure.id = C.uid(); tab.measures.splice(index + 1, 0, measure); }); }
       const remove = event.target.closest('[data-remove]');
       if (remove) { if (current().measures.length === 1) { toast('Оставьте хотя бы один такт.'); return; } const index = Number(remove.dataset.remove), tabId = current().id, measureId = current().measures[index].id; stopPlayback(); if (await confirmAction('Удалить такт?', `Такт ${index + 1} будет удалён. Действие можно отменить.`, 'Удалить') && current().id === tabId && current().measures[index]?.id === measureId) commit(tab => { tab.measures.splice(index, 1); }); }
     };
-    $('score').ondblclick = event => { if (event.target.closest('[data-cell]')) editCell(); };
+    $('score').ondblclick = event => { if (event.target.closest('[data-count-slot]')) editSyllable(); else if (state.entryMode !== 'paint' && event.target.closest('[data-cell]')) editCell(); };
     $('score').onchange = event => { if (event.target.matches('[data-measure-label]')) { const index = Number(event.target.dataset.measureLabel), value = event.target.value; commit(tab => { tab.measures[index].label = value; }, { render: false }); } };
     $('note-palette').innerHTML = ['D', 'S', 'K', ...Array.from({ length: 12 }, (_, index) => String(index + 1)), '—'].map(note => `<button data-note="${note}" title="Вставить ${note}" aria-label="Вставить ${note}" aria-pressed="false">${note}</button>`).join('') + '<button class="chord-button" data-chord>Аккорд</button>';
-    $('note-palette').onclick = event => { if (state.preview) return; const button = event.target.closest('button'); if (!button) return; if (button.hasAttribute('data-chord')) editCell(); else setCell(button.dataset.note); };
+    $('note-palette').onclick = event => { if (state.preview) return; const button = event.target.closest('button'); if (!button) return; if (button.hasAttribute('data-chord')) editCell(); else if (state.entryMode === 'paint') { state.brush = button.dataset.note; updateSelectionContext(); } else setCell(button.dataset.note); };
     $('cell-form').onsubmit = event => { if (event.submitter?.value === 'cancel') return; event.preventDefault(); try { C.parseToken($('cell-value').value); $('cell-dialog').close(); setCell($('cell-value').value); } catch (error) { toast(error.message, true); } };
     $('add-measure').onclick = () => { commit(tab => { if (tab.measures.length < 512) tab.measures.push(C.emptyMeasure(tab)); }); };
     $('undo').onclick = () => undo(); $('redo').onclick = () => undo(true);
@@ -602,7 +727,7 @@
       if (event.key === ' ') { event.preventDefault(); if (!event.repeat) togglePlayback(); return; }
       if (event.ctrlKey || event.metaKey || event.altKey || state.preview) return;
       if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') { event.preventDefault(); moveSelection(event.key === 'ArrowRight' ? 1 : -1); }
-      else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); if (current().hands === 'split') moveSelection(0, event.key === 'ArrowDown' ? 1 : -1); else moveMeasure(event.key === 'ArrowDown' ? 1 : -1); }
+      else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); if (rowsFor(current()).length === 2) moveSelection(0, event.key === 'ArrowDown' ? 1 : -1); else moveMeasure(event.key === 'ArrowDown' ? 1 : -1); }
       else if (event.key === 'Enter') { event.preventDefault(); editCell(); }
       else {
         const physicalNote = { KeyD: 'D', KeyS: 'S', KeyK: 'K' }[event.code];

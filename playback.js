@@ -119,7 +119,6 @@
               offset: (bar * barQuarters + slot.offset) * quarterSeconds };
           });
         });
-        const rows = tab.hands === 'split' ? ['R', 'L'] : ['main'];
         const cycleSeconds = indices.length * barQuarters * quarterSeconds;
         const loop = settings.loop === true;
         const metronome = settings.metronome === true;
@@ -178,7 +177,7 @@
             const time = start + cycle * cycleSeconds + event.offset;
             if (time > context.currentTime + 0.25) break;
             const soundTime = Math.max(time, context.currentTime + 0.005);
-            for (const row of rows) sound(candidate, tab.measures[event.measure].rows[row][event.slot], soundTime, quarterSeconds, event.sub === 0);
+            for (const row of C.cellRows(tab, event.measure, event.slot)) sound(candidate, tab.measures[event.measure].rows[row][event.slot], soundTime, quarterSeconds, event.sub === 0);
             if (metronome && event.sub === 0) click(candidate, soundTime, event.beat === 0);
             const queuedIndex = eventIndex, queuedCycle = cycle;
             later(candidate, function () {
