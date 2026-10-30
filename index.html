@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#203e38">
+  <title>Тихий ритм — табулатуры для ханга</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='20' cy='20' r='19' fill='%23203e38'/%3E%3Ccircle cx='20' cy='20' r='5' fill='%23dfbf86'/%3E%3Ccircle cx='20' cy='8' r='3' fill='%23dfbf86'/%3E%3Ccircle cx='10' cy='26' r='3' fill='%23dfbf86'/%3E%3Ccircle cx='30' cy='26' r='3' fill='%23dfbf86'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="core.js"></script>
+  <script defer src="sample-tabs.js"></script>
+  <script defer src="export.js"></script>
+  <script defer src="playback.js"></script>
+  <script defer src="file-storage.js"></script>
+  <script defer src="directory-storage.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="./" aria-label="Тихий ритм — главная">
+      <svg viewBox="0 0 44 44" fill="none" aria-hidden="true"><circle cx="22" cy="22" r="20" stroke="currentColor"/><ellipse cx="22" cy="22" rx="6" ry="5" fill="currentColor"/><ellipse cx="22" cy="10" rx="4" ry="3" stroke="currentColor"/><ellipse cx="11" cy="18" rx="3" ry="4" transform="rotate(-35 11 18)" stroke="currentColor"/><ellipse cx="33" cy="18" rx="3" ry="4" transform="rotate(35 33 18)" stroke="currentColor"/><ellipse cx="15" cy="32" rx="3" ry="4" transform="rotate(35 15 32)" stroke="currentColor"/><ellipse cx="29" cy="32" rx="3" ry="4" transform="rotate(-35 29 32)" stroke="currentColor"/></svg>
+      <span>тихий ритм<small>СТУДИЯ ТАБУЛАТУР</small></span>
+    </a>
+    <button id="new-tab" class="button primary new-button"><span>＋</span> Новая табулатура</button>
+    <div class="library-heading"><span>МОЯ БИБЛИОТЕКА</span><span id="library-count">0</span></div>
+    <label class="search-wrap"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Найти табулатуру" aria-label="Найти табулатуру"></label>
+    <nav id="library" class="library" aria-label="Табулатуры"></nav>
+    <div class="sidebar-bottom">
+      <button id="import-tab" class="button quiet full-width">↥ <span>Открыть JSON / TXT</span></button>
+      <input id="import-file" type="file" accept=".json,.txt,application/json,text/plain" hidden>
+      <div id="folder-settings" class="folder-settings" hidden>
+        <div class="folder-buttons"><button id="choose-folder" class="button quiet">▣ Выбрать папку tabs</button><button id="change-folder" class="text-button" hidden>Изменить</button></div>
+        <small id="folder-status"></small>
+      </div>
+      <div class="storage-indicator"><span class="status-dot"></span><span id="storage-mode">Локальная библиотека</span></div>
+      <p>Место для музыки.<br>Один удар за другим.</p>
+    </div>
+  </aside>
+  <main class="workspace">
+    <header class="topbar"><div class="breadcrumb">Библиотека <span>/</span> <strong id="breadcrumb-title">Редактор</strong></div><div class="header-actions"><span id="save-status" role="status">Загрузка…</span><button id="save-changes" class="button primary" title="Сохранить текущую табулатуру (Ctrl+S / Cmd+S)">Сохранить изменения</button><button id="save-json" class="button secondary" title="Скачать отдельную копию текущей табулатуры в JSON">↓ Копия JSON</button><button id="export-png" class="button secondary">↗ Экспорт PNG</button></div></header>
+    <div class="editor-content">
+      <div class="document-heading"><div><div class="eyebrow">ВАША МУЗЫКА В ПРОСТОЙ ЗАПИСИ</div><input id="tab-title" class="title-input" aria-label="Название табулатуры" maxlength="160" placeholder="Новая табулатура"><input id="tab-subtitle" class="subtitle-input" aria-label="Подзаголовок" maxlength="240" placeholder="Добавьте исполнителя, строй или настроение…"></div><div class="document-mark" aria-hidden="true">♪</div></div>
+      <p id="file-save-note" class="file-save-note"></p>
+      <section class="settings-card" aria-label="Настройки ритма">
+        <div class="setting"><label for="meter-preset">РАЗМЕР</label><select id="meter-preset"><option value="4/4">4/4 · четыре доли</option><option value="7/4">7/4 · семь долей</option><option value="3/4">3/4 · три доли</option><option value="5/4">5/4 · пять долей</option><option value="6/8">6/8 · две по три</option><option value="9/8">9/8 · три по три</option><option value="12/8">12/8 · четыре по три</option><option value="7/8">7/8 · семь восьмых</option><option value="8/4">8/4 · восемь долей</option><option value="custom">Свой размер…</option></select></div>
+        <div class="setting"><label>ЗАПИСЬ</label><div class="segmented" id="notation-control"><button data-notation="count" title="Цифровой счёт">Счёт</button><button data-notation="konnakol">Коннакол</button><button data-notation="hybrid" title="Номер каждой доли и слоги её деления">Гибрид</button></div></div>
+        <div class="setting"><label for="hands">ПАРТИИ</label><select id="hands"><option value="single">Одна строка</option><option value="split">Правая / левая</option></select></div>
+        <div class="setting tempo-setting"><label for="tempo">ТЕМП · BPM ♩</label><div class="tempo-control"><input id="tempo" type="number" min="20" max="400" value="90" aria-label="Темп в четвертях в минуту"><button id="play" title="Прослушать ритм (пробел)" aria-label="Прослушать ритм">▶</button></div></div>
+      </section>
+      <section class="rhythm-panel" aria-label="Деление долей">
+        <div class="section-top"><div><h2>Внутри ритма</h2><p id="rhythm-summary">Разделите любую долю, сохранив общий размер.</p></div><div class="rhythm-actions"><span>Все доли</span><select id="all-division" aria-label="Разделить все доли"><option value="">Части…</option><option value="1">1 часть</option><option value="2">2 части</option><option value="3">3 части</option><option value="4">4 части</option></select><button id="rhythm-help" class="icon-button" aria-label="Как устроен ритм">?</button></div></div>
+        <div class="rhythm-scope-bar"><label for="rhythm-scope">Деление долей</label><select id="rhythm-scope" aria-label="Где изменить деление долей"><option value="measure">Этот такт</option><option value="all">Все такты</option></select><select id="rhythm-measure" aria-label="Такт для настройки ритма"></select><span id="rhythm-scope-note">Изменения применятся только к выбранному такту.</span></div>
+        <div id="beat-controls" class="beat-controls"></div>
+        <div id="konnakol-panel" class="konnakol-panel" hidden>
+          <div class="phrase-title"><span>Группы фразы</span><small>Общая фраза для всех тактов. Слоги следуют сетке каждого такта.</small></div>
+          <div class="phrase-controls"><select id="phrase-preset" aria-label="Группировка коннакола"><option value="beats">По долям</option><option value="3+3+2">3 + 3 + 2 · Takita / Takita / Taka</option><option value="4+4">4 + 4 · Takadimi / Takajonu</option><option value="3+4">3 + 4 · Takita / Takadimi</option><option value="custom">Своя фраза</option></select><input id="phrase-input" aria-label="Слоги своей фразы" placeholder="Ta Ki Ta | Ta Ki Ta | Ta Ka"><button id="apply-phrase" class="button secondary">Применить</button></div>
+          <p id="phrase-note" class="small-note"></p>
+        </div>
+      </section>
+      <section class="score-section" aria-label="Редактор табулатуры">
+        <div class="section-top score-toolbar"><div class="score-heading"><h2>Табулатура</h2><span id="measure-count" class="pill"></span></div><div class="score-tools"><button id="undo" class="icon-button" title="Отменить (Ctrl+Z)" aria-label="Отменить">↶</button><button id="redo" class="icon-button" title="Повторить (Ctrl+Shift+Z)" aria-label="Повторить">↷</button><span class="tool-divider"></span><button id="toggle-preview" class="button quiet">◫ Вид для печати</button></div></div>
+        <div class="playback-bar" aria-label="Прослушивание">
+          <button id="transport-play" class="transport-button" title="Прослушать ритм (пробел)" aria-label="Прослушать ритм" aria-pressed="false">▶</button>
+          <select id="playback-range" aria-label="Что прослушать"><option value="all">Всё произведение</option><option value="measure">Этот такт</option></select>
+          <label class="playback-option"><input id="playback-loop" type="checkbox"> Повтор</label>
+          <label class="playback-option"><input id="playback-metronome" type="checkbox"> Метроном</label>
+          <span id="playback-status" role="status">Готово к прослушиванию</span>
+          <div id="playback-progress" class="playback-progress" aria-hidden="true"></div>
+        </div>
+        <div class="entry-bar"><span class="entry-label">УДАР</span><div id="note-palette" class="note-palette"></div><span class="entry-hint">Клик по ячейке → удар. Двойной клик → аккорд.</span></div>
+        <div class="entry-status"><span id="selection-context"></span><label class="entry-option"><input id="auto-advance" type="checkbox" title="После ввода удара переходить к следующей ячейке" checked> Автопереход</label></div>
+        <div id="score" class="score"></div>
+        <button id="add-measure" class="add-measure">＋ Добавить такт</button>
+        <div class="score-legend"><span><b>D</b> Ding</span><span><b>S</b> Slap</span><span><b>K</b> Ka</span><span><b>1–12</b> тоновые поля</span><span><b>—</b> пауза</span><span><b>R / L</b> правая / левая</span></div>
+      </section>
+      <section class="notes-section"><label for="tab-notes">Заметки к исполнению</label><textarea id="tab-notes" rows="2" maxlength="5000" placeholder="Аппликатура, динамика, повторения — всё, что важно запомнить."></textarea></section>
+      <footer class="editor-footer"><span>ТИХИЙ РИТМ <span class="footer-dot">·</span> Сделайте музыку видимой</span><div class="footer-actions"><button id="duplicate-tab" class="text-button">Создать копию</button><button id="delete-tab" class="text-button">Удалить табулатуру</button></div></footer>
+    </div>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="cell-dialog"><form method="dialog" id="cell-form"><div class="dialog-heading"><h2>Удар или аккорд</h2><button class="icon-button" value="cancel" aria-label="Закрыть">×</button></div><p id="cell-location"></p><label for="cell-value">Ноты в одной позиции</label><input id="cell-value" maxlength="80" placeholder="D, 5 или 2/4/8" autocomplete="off"><p class="small-note">Разделяйте ноты аккорда знаком /. Пустое поле или — означает паузу.</p><div class="dialog-actions"><button class="button secondary" value="cancel">Отмена</button><button id="confirm-cell" class="button primary" value="save">Записать</button></div></form></dialog>
+  <dialog id="info-dialog"><div class="dialog-heading"><h2>Ритм, который удобно читать</h2><button id="close-info" class="icon-button" aria-label="Закрыть">×</button></div><div class="help-content"><p><b>Размер задаёт длину такта.</b> Деление доли добавляет позиции внутри него. 4/4 с восемью восьмыми остаётся 4/4. В 12/8 по умолчанию четыре крупные доли по три восьмых.</p><p><b>Каждая доля независима.</b> Выберите «Этот такт» и его номер, чтобы изменить только его, либо «Все такты» для общего изменения выбранной доли. Клик по ячейке выбирает её такт. Для «1 2 3-и 4» задайте две части третьей доле. В цифровом режиме поле под долей задаёт её первую подпись; в коннаколе — слоги через пробел.</p><p><b>Коннакол — слоговая запись ритма.</b> Ta-Ki-Ta — три слога, Ta-Ka-Di-Mi и Ta-Ka-Jo-Nu — по четыре. «По долям» подписывает части доли; «Группы фразы» объединяют существующие позиции. Например, 3+3+2 поверх восьмых в 4/4.</p><p><b>Гибрид.</b> Номер доли сохраняется всегда. У разделённой доли он расположен над всей группой слогов. Например: 1(Ta Ka Di Mi) | 2 | 3 | 4. Для каждого такта учитывается его собственное деление. Под целой долей можно менять номер, под разделённой — свои слоги. Группы фразы сохраняются для режима «Коннакол»; в гибриде слоги следуют отдельным долям.</p><p><b>Ввод.</b> Выберите ячейку и удар D, S, K или 1–12 на панели. D/S/K работают и при русской раскладке; цифры 1–9 доступны с клавиатуры. «Автопереход» переводит курсор к следующей позиции после ввода; его можно выключить. Двойной клик либо Enter открывает аккорд. Delete очищает выбранную ячейку. Стрелки перемещают курсор, в партиях R/L — также между строками и тактами.</p><p><b>Прослушивание.</b> Выберите всё произведение или текущий такт. «Повтор» зацикливает выбранный фрагмент, «Метроном» отмечает начало каждой крупной доли, включая паузы. Пробел запускает и останавливает, Escape останавливает. Изменение записи также останавливает прослушивание.</p><p><b>Действия с тактом.</b> Меню ⋯ позволяет вставить пустой такт с тем же ритмом, переместить такт выше или ниже, очистить удары. Рядом — дублирование и удаление. Ctrl+Z отменяет изменение; Ctrl+Shift+Z возвращает его.</p><p><b>Время и колонки.</b> Позиции равной длительности имеют одинаковую ширину. Если разделена только одна доля, её части уже целой доли. Счёт и ноты используют одну сетку.</p><p>Приложение сохраняет номера полей и перкуссионные обозначения. Прослушивание даёт условные звуки для проверки ритма; это не запись конкретного строя ханга. BPM всегда считает четверти, в том числе в 12/8.</p><p class="source-line">О коннаколе: <a href="https://ir.upsi.edu.my/files/docs/2020/2114_2114.pdf" target="_blank" rel="noopener noreferrer">Tony Makarome · South Indian Konnakkol in Western Musicianship Teaching</a>.</p></div></dialog>
+  <dialog id="confirm-dialog"><h2 id="confirm-title"></h2><p id="confirm-text"></p><div class="dialog-actions"><button id="confirm-no" class="button secondary">Отмена</button><button id="confirm-yes" class="button primary">Продолжить</button></div></dialog>
+</body>
+</html>

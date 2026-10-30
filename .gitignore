@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+artifacts/
+.browser-profile*/
+.openai/
+PROJECT_CONTEXT.md
+tabs/*.json
+!tabs/hang-1.json
+!tabs/hang-2.json
+!tabs/hang-massive.json
