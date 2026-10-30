@@ -159,7 +159,7 @@
   function subdivisionValue(tree) {
     let leaves = 0;
     function visit(nodes, depth) {
-      if (!Array.isArray(nodes) || nodes.length < (depth ? 2 : 1) || nodes.length > (depth ? 16 : MAX_SLOTS_PER_BEAT) || depth > 8) fail('Некорректное или слишком глубокое деление ячейки.');
+      if (!Array.isArray(nodes) || nodes.length < (depth ? 2 : 1) || nodes.length > MAX_SLOTS_PER_BEAT || depth > 8) fail('Некорректное или слишком глубокое деление ячейки.');
       return nodes.map(node => {
         if (node === null) { if (++leaves > MAX_SLOTS_PER_BEAT) fail('В одной доле допускается до 64 ячеек.'); return null; }
         return visit(node, depth + 1);
@@ -340,11 +340,11 @@
     return { grid, path, tree, parent };
   }
   function splitSlot(tab, measureIndex, slotIndex, parts = 2) {
-    integer(parts, 2, 16, 'Число частей ячейки');
+    integer(parts, 2, MAX_SLOTS_PER_BEAT, 'Число частей ячейки');
     const selected = selectedSlot(tab, measureIndex, slotIndex);
     const beats = clone(measureBeats(tab, measureIndex));
     const beat = beats[selected.beat];
-    if (beat.division + parts - 1 > MAX_SLOTS_PER_BEAT) fail('В одной доле допускается до 64 ячеек.');
+    if (beat.division + parts - 1 > MAX_SLOTS_PER_BEAT) fail('В одной доле допускается до ' + MAX_SLOTS_PER_BEAT + ' ячеек. ' + (beat.division < MAX_SLOTS_PER_BEAT ? 'Эту ячейку можно разделить максимум на ' + (MAX_SLOTS_PER_BEAT - beat.division + 1) + ' частей.' : 'Сначала соедините части доли.'));
     const info = subdivisionParent(beat, selected.sub);
     if (!beat.subdivisions && beat.weights) beat.baseWeights = beat.weights.slice();
     if (info.tree.length === 1 && info.tree[0] === null) {

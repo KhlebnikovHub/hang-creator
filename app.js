@@ -226,6 +226,9 @@
     if (!tab || !tab.measures[measure]) return;
     const position = C.slots(tab, measure)[slot]; if (!position) return;
     const beat = C.measureBeats(tab, measure)[position.beat], cell = tab.measures[measure].rows[row][slot];
+    const splitCapacity = 65 - beat.division;
+    [2, 3, 4].forEach(parts => { $(`split-cell-${parts}`).disabled = parts > splitCapacity; });
+    $('split-cell-custom').disabled = splitCapacity < 2;
     $('selection-context').textContent = `Такт ${measure + 1} · доля ${beat.label}${beat.division > 1 ? ' · ' + position.displayLabel : ''}${row === 'main' ? '' : ' · ' + row} · ${cell.length ? C.tokenText(cell) : 'пауза'}`;
     $('cell-duration').textContent = `Ячейка ${position.durationFraction}`;
     $('merge-cell').disabled = !C.canMergeSlot(tab, measure, slot);
@@ -310,13 +313,40 @@
     $('cell-value').value = C.tokenText(current().measures[measure].rows[row][slot]).replace(/^-$/, '');
     $('cell-dialog').showModal(); $('cell-value').focus(); $('cell-value').select();
   }
-  async function reshapeCell(parts) {
-    if (state.preview) return;
+  async function reshapeCell(parts, onError = message => toast(message, true)) {
+    if (state.preview) return false;
     try {
       const before = JSON.stringify(current()), { measure, slot } = state.selected;
       const result = parts ? C.splitSlot(current(), measure, slot, parts) : C.mergeSlot(current(), measure, slot);
       await applyRhythmChange(result, before);
-    } catch (error) { toast(error.message, true); }
+      return JSON.stringify(current()) === JSON.stringify(result.tab);
+    } catch (error) { onError(error.message); return false; }
+  }
+  function splitError(message = '') {
+    $('split-error').textContent = message;
+    $('split-error').hidden = !message;
+    $('split-parts').setAttribute('aria-invalid', String(Boolean(message)));
+  }
+  function splitPreview() {
+    const { measure, slot } = state.selected, parts = Number($('split-parts').value);
+    $('split-preview').textContent = 'Введите целое число частей — например, 6 или 8.';
+    if (!$('split-parts').value.trim() || !Number.isInteger(parts) || parts < 2 || parts > 64) return;
+    try {
+      const result = C.splitSlot(current(), measure, slot, parts);
+      const duration = C.slots(result.tab, measure)[result.slot].durationFraction;
+      $('split-preview').textContent = `Равных частей: ${parts}. Длительность каждой: ${duration}. Удар останется в первой части.`;
+    } catch { /* Keep the form editable; report validation errors on submit. */ }
+  }
+  function editSplit() {
+    if (state.preview) return;
+    const { measure, slot } = state.selected, tab = current(), position = C.slots(tab, measure)[slot];
+    const maximum = 65 - C.measureBeats(tab, measure)[position.beat].division;
+    $('split-location').textContent = `Такт ${measure + 1} · позиция ${slot + 1} · длительность ${position.durationFraction}`;
+    $('split-limit').textContent = `Доступное число частей: от 2 до ${maximum}. В одной доле помещается до 64 ячеек.`;
+    $('split-parts').max = String(maximum);
+    $('split-parts').value = String(Math.min(6, maximum));
+    splitError(); splitPreview();
+    $('split-dialog').showModal(); $('split-parts').focus(); $('split-parts').select();
   }
   function editSyllable() {
     if (state.preview) return;
@@ -582,6 +612,19 @@
     };
     $('split-cell-2').onclick = () => reshapeCell(2);
     $('split-cell-3').onclick = () => reshapeCell(3);
+    $('split-cell-4').onclick = () => reshapeCell(4);
+    $('split-cell-custom').onclick = editSplit;
+    $('split-parts').oninput = () => { splitError(); splitPreview(); };
+    document.querySelectorAll('[data-close-split]').forEach(button => { button.onclick = () => $('split-dialog').close(); });
+    $('split-form').onsubmit = async event => {
+      event.preventDefault();
+      const input = $('split-parts'), parts = Number(input.value);
+      if (!input.value.trim() || !Number.isInteger(parts) || parts < 2 || parts > 64) {
+        splitError('Введите целое число от 2 до 64.'); input.focus(); return;
+      }
+      if (await reshapeCell(parts, splitError)) $('split-dialog').close();
+      else input.focus();
+    };
     $('merge-cell').onclick = () => reshapeCell(0);
     $('clear-cell').onclick = () => { if (state.entryMode === 'paint') { state.brush = '—'; updateSelectionContext(); } else setCell('', false); };
     $('edit-syllable').onclick = editSyllable;
